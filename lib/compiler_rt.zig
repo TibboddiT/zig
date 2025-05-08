@@ -242,6 +242,7 @@ comptime {
     // extra
     _ = @import("compiler_rt/os_version_check.zig");
     _ = @import("compiler_rt/emutls.zig");
+    _ = @import("compiler_rt/tls.zig");
     _ = @import("compiler_rt/arm.zig");
     _ = @import("compiler_rt/aulldiv.zig");
     _ = @import("compiler_rt/aullrem.zig");
