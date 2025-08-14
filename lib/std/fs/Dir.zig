@@ -2804,7 +2804,7 @@ pub fn statFile(self: Dir, sub_path: []const u8) StatFileError!Stat {
         const st = try std.os.fstatat_wasi(self.fd, sub_path, .{ .SYMLINK_FOLLOW = true });
         return Stat.fromWasi(st);
     }
-    if (native_os == .linux) {
+    if (native_os == .linux and builtin.os.isAtLeast(.linux, .{ .major = 4, .minor = 19, .patch = 0 }) orelse true) {
         const sub_path_c = try posix.toPosixPath(sub_path);
         var stx = std.mem.zeroes(linux.Statx);
 
@@ -2816,18 +2816,21 @@ pub fn statFile(self: Dir, sub_path: []const u8) StatFileError!Stat {
             &stx,
         );
 
-        return switch (linux.E.init(rc)) {
-            .SUCCESS => Stat.fromLinux(stx),
-            .ACCES => error.AccessDenied,
+        const res = linux.E.init(rc);
+
+        switch (res) {
+            .SUCCESS => return Stat.fromLinux(stx),
+            .ACCES => return error.AccessDenied,
             .BADF => unreachable,
             .FAULT => unreachable,
             .INVAL => unreachable,
-            .LOOP => error.SymLinkLoop,
+            .LOOP => return error.SymLinkLoop,
             .NAMETOOLONG => unreachable, // Handled by posix.toPosixPath() above.
-            .NOENT, .NOTDIR => error.FileNotFound,
-            .NOMEM => error.SystemResources,
-            else => |err| posix.unexpectedErrno(err),
-        };
+            .NOENT, .NOTDIR => return error.FileNotFound,
+            .NOMEM => return error.SystemResources,
+            .NOSYS => {}, // allow fallback if not available
+            else => |err| return posix.unexpectedErrno(err),
+        }
     }
     const st = try posix.fstatat(self.fd, sub_path, 0);
     return Stat.fromPosix(st);

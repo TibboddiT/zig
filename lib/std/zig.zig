@@ -703,6 +703,7 @@ pub const EnvVar = enum {
     ZIG_VERBOSE_CC,
     ZIG_BTRFS_WORKAROUND,
     ZIG_DEBUG_CMD,
+    ZIG_ENV_EXECUTABLE_PATH,
     CC,
     NO_COLOR,
     CLICOLOR_FORCE,

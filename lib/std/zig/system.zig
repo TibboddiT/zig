@@ -218,9 +218,7 @@ pub fn resolveTargetQuery(query: Target.Query) DetectError!Target {
             .linux, .illumos => {
                 const uts = posix.uname();
                 const release = mem.sliceTo(&uts.release, 0);
-                // The release field sometimes has a weird format,
-                // `Version.parse` will attempt to find some meaningful interpretation.
-                if (std.SemanticVersion.parse(release)) |ver| {
+                if (std.SemanticVersion.parseUtsnameRelease(release)) |ver| {
                     var stripped = ver;
                     stripped.pre = null;
                     stripped.build = null;
@@ -456,11 +454,26 @@ pub fn resolveTargetQuery(query: Target.Query) DetectError!Target {
                     @field(result_ver_range, @tagName(t)).range.min = @field(abi_ver_range, @tagName(t)).range.min;
                 }
 
-                if (@field(result_ver_range, @tagName(t)).glibc.order(@field(abi_ver_range, @tagName(t)).glibc) == .lt and
-                    query.glibc_version == null)
-                {
-                    @field(result_ver_range, @tagName(t)).glibc = @field(abi_ver_range, @tagName(t)).glibc;
+                // Readjust min to not be higher than max.
+                if (@field(result_ver_range, @tagName(t)).range.max.order(@field(result_ver_range, @tagName(t)).range.min) == .lt) {
+                    @field(result_ver_range, @tagName(t)).range.min = @field(result_ver_range, @tagName(t)).range.max;
                 }
+
+                // I fail to understand the logic here. Leaving as comments for reference.
+
+                // if (@field(result_ver_range, @tagName(t)).glibc.order(@field(abi_ver_range, @tagName(t)).glibc) == .lt and
+                //     query.glibc_version == null)
+                // {
+                //     @field(result_ver_range, @tagName(t)).glibc = @field(abi_ver_range, @tagName(t)).glibc;
+                // }
+
+                // if (t == .linux) {
+                //     if (@field(result_ver_range, @tagName(t)).android < @field(abi_ver_range, @tagName(t)).android and
+                //         query.android_api_level == null)
+                //     {
+                //         @field(result_ver_range, @tagName(t)).android = @field(abi_ver_range, @tagName(t)).android;
+                //     }
+                // }
             },
             .windows => if (!result_ver_range.windows.min.isAtLeast(abi_ver_range.windows.min)) {
                 result_ver_range.windows.min = abi_ver_range.windows.min;
@@ -813,6 +826,41 @@ pub fn abiAndDynamicLinkerFromFile(
             error.GLibCNotFound => {},
             else => |e| return e,
         }
+    } else if (builtin.target.os.tag == .linux and result.isBionicLibC() and
+        query.android_api_level == null)
+    {
+        var backing_buffer: [2048]u8 = undefined;
+        var fba: std.heap.FixedBufferAllocator = .init(&backing_buffer);
+        const allocator = fba.allocator();
+
+        var getprop: std.process.Child = .init(&.{ "getprop", "ro.build.version.sdk" }, allocator);
+
+        getprop.stdout_behavior = .Pipe;
+        getprop.stderr_behavior = .Pipe;
+
+        var stdout: std.ArrayListUnmanaged(u8) = .empty;
+        var stderr: std.ArrayListUnmanaged(u8) = .empty;
+
+        const android_version: ?u32 = b_android_version: {
+            getprop.spawn() catch break :b_android_version null;
+            getprop.collectOutput(allocator, &stdout, &stderr, 255) catch {
+                break :b_android_version null;
+            };
+
+            const status = getprop.wait() catch break :b_android_version null;
+
+            if (status.Exited == 0) {
+                if (std.fmt.parseInt(u32, stdout.items[0 .. std.mem.indexOf(u8, stdout.items, "\n") orelse stdout.items.len], 10)) |version| {
+                    break :b_android_version version;
+                } else |_| {}
+            }
+
+            break :b_android_version null;
+        };
+
+        if (android_version) |v| {
+            result.os.version_range.linux.android = v;
+        }
     }
 
     return result;
@@ -1118,7 +1166,7 @@ fn detectAbiAndDynamicLinker(
         // if it finds one, then instead of using /usr/bin/env as the ELF file to examine, it uses the file it references instead,
         // doing the same logic recursively in case it finds another shebang line.
 
-        var file_name: []const u8 = switch (os.tag) {
+        var file_name: []const u8 = std.zig.EnvVar.getPosix(.ZIG_ENV_EXECUTABLE_PATH) orelse switch (os.tag) {
             // Since /usr/bin/env is hard-coded into the shebang line of many portable scripts, it's a
             // reasonably reliable path to start with.
             else => "/usr/bin/env",
@@ -1165,8 +1213,11 @@ fn detectAbiAndDynamicLinker(
                 error.FileTooBig,
                 error.Unexpected,
                 => |e| {
-                    std.log.warn("Encountered error: {s}, falling back to default ABI and dynamic linker.", .{@errorName(e)});
-                    return defaultAbiAndDynamicLinker(cpu, os, query);
+                    const extra_str = if (!std.zig.EnvVar.isSet(.ZIG_ENV_EXECUTABLE_PATH))
+                        "\nIf the `env` executable file is at a non standard location, consider specifying it using the ZIG_ENV_EXECUTABLE_PATH environment variable."
+                    else
+                        "";
+                    std.process.fatal("unable to open file '{s}' to detect ABI and dynamic linker: {s}{s}", .{ file_name, @errorName(e), extra_str });
                 },
 
                 else => |e| return e,

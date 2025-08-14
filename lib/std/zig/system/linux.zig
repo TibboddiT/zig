@@ -391,23 +391,32 @@ pub fn detectNativeCpuAndFeatures() ?Target.Cpu {
             return ArmCpuinfoParser.parse(current_arch, &file_reader.interface) catch null;
         },
         .aarch64, .aarch64_be => {
-            const registers = [12]u64{
-                getAArch64CpuFeature("MIDR_EL1"),
-                getAArch64CpuFeature("ID_AA64PFR0_EL1"),
-                getAArch64CpuFeature("ID_AA64PFR1_EL1"),
-                getAArch64CpuFeature("ID_AA64DFR0_EL1"),
-                getAArch64CpuFeature("ID_AA64DFR1_EL1"),
-                getAArch64CpuFeature("ID_AA64AFR0_EL1"),
-                getAArch64CpuFeature("ID_AA64AFR1_EL1"),
-                getAArch64CpuFeature("ID_AA64ISAR0_EL1"),
-                getAArch64CpuFeature("ID_AA64ISAR1_EL1"),
-                getAArch64CpuFeature("ID_AA64MMFR0_EL1"),
-                getAArch64CpuFeature("ID_AA64MMFR1_EL1"),
-                getAArch64CpuFeature("ID_AA64MMFR2_EL1"),
-            };
+            // There are situations where these registers are not accessible from EL0.
+            // But this strategy should certainly be used when available.
+            const hwcap = std.os.linux.getauxval(std.elf.AT_HWCAP);
+            const cpuid = (1 << 11);
 
-            const core = @import("arm.zig").aarch64.detectNativeCpuAndFeatures(current_arch, registers);
-            return core;
+            if (hwcap & cpuid != 0) {
+                const registers = [12]u64{
+                    getAArch64CpuFeature("MIDR_EL1"),
+                    getAArch64CpuFeature("ID_AA64PFR0_EL1"),
+                    getAArch64CpuFeature("ID_AA64PFR1_EL1"),
+                    getAArch64CpuFeature("ID_AA64DFR0_EL1"),
+                    getAArch64CpuFeature("ID_AA64DFR1_EL1"),
+                    getAArch64CpuFeature("ID_AA64AFR0_EL1"),
+                    getAArch64CpuFeature("ID_AA64AFR1_EL1"),
+                    getAArch64CpuFeature("ID_AA64ISAR0_EL1"),
+                    getAArch64CpuFeature("ID_AA64ISAR1_EL1"),
+                    getAArch64CpuFeature("ID_AA64MMFR0_EL1"),
+                    getAArch64CpuFeature("ID_AA64MMFR1_EL1"),
+                    getAArch64CpuFeature("ID_AA64MMFR2_EL1"),
+                };
+
+                const core = @import("arm.zig").aarch64.detectNativeCpuAndFeatures(current_arch, registers);
+                return core;
+            }
+
+            return ArmCpuinfoParser.parse(current_arch, &file_reader.interface) catch null;
         },
         .sparc64 => {
             return SparcCpuinfoParser.parse(current_arch, &file_reader.interface) catch null;

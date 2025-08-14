@@ -558,7 +558,7 @@ pub fn stat(self: File) StatError!Stat {
         return Stat.fromWasi(st);
     }
 
-    if (builtin.os.tag == .linux) {
+    if (builtin.os.tag == .linux and builtin.os.isAtLeast(.linux, .{ .major = 4, .minor = 19, .patch = 0 }) orelse true) {
         var stx = std.mem.zeroes(linux.Statx);
 
         const rc = linux.statx(
@@ -569,8 +569,10 @@ pub fn stat(self: File) StatError!Stat {
             &stx,
         );
 
-        return switch (linux.E.init(rc)) {
-            .SUCCESS => Stat.fromLinux(stx),
+        const res = linux.E.init(rc);
+
+        switch (res) {
+            .SUCCESS => return Stat.fromLinux(stx),
             .ACCES => unreachable,
             .BADF => unreachable,
             .FAULT => unreachable,
@@ -578,10 +580,11 @@ pub fn stat(self: File) StatError!Stat {
             .LOOP => unreachable,
             .NAMETOOLONG => unreachable,
             .NOENT => unreachable,
-            .NOMEM => error.SystemResources,
+            .NOMEM => return error.SystemResources,
             .NOTDIR => unreachable,
-            else => |err| posix.unexpectedErrno(err),
-        };
+            .NOSYS => {}, // allow fallback if not available
+            else => |err| return posix.unexpectedErrno(err),
+        }
     }
 
     const st = try posix.fstat(self.handle);
