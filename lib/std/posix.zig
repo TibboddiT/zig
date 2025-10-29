@@ -5752,6 +5752,7 @@ pub fn copy_file_range(fd_in: fd_t, off_in: u64, fd_out: fd_t, off_out: u64, len
                     .PERM => return error.PermissionDenied,
                     .TXTBSY => return error.SwapFile,
                     .XDEV => break, // support for cross-filesystem copy added in Linux 5.3, use fallback
+                    .NOSYS => break, // allow fallback if not available
                     else => |err| return unexpectedErrno(err),
                 }
             }

@@ -2102,6 +2102,13 @@ pub inline fn isGnuLibC(target: *const Target) bool {
     };
 }
 
+pub inline fn isBionicLibC(target: *const Target) bool {
+    return switch (target.os.tag) {
+        .linux => target.abi.isAndroid(),
+        else => false,
+    };
+}
+
 pub inline fn isMuslLibC(target: *const Target) bool {
     return target.os.tag == .linux and target.abi.isMusl();
 }
@@ -2148,12 +2155,7 @@ pub fn requiresLibC(target: *const Target) bool {
         .serenity,
         => true,
 
-        // Android API levels prior to 29 did not have native TLS support. For these API levels, TLS
-        // is implemented through calls to `__emutls_get_address`. We provide this function in
-        // compiler-rt, but it's implemented by way of `pthread_key_create` et al, so linking libc
-        // is required.
-        .linux => target.abi.isAndroid() and target.os.version_range.linux.android < 29,
-
+        .linux,
         .windows,
         .freebsd,
         .netbsd,

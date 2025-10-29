@@ -85,9 +85,11 @@ pub fn defaultSingleThreaded(target: *const std.Target) bool {
     return false;
 }
 
-pub fn useEmulatedTls(target: *const std.Target) bool {
+pub fn useEmulatedTls(target: *const std.Target, link_mode: std.builtin.LinkMode) bool {
     if (target.abi.isAndroid()) {
-        if (target.os.version_range.linux.android < 29) return true;
+        // If static linking, then in theory all tls access will be relaxed to LE access model.
+        // In this case we avoid using emulated TLS, which in turn avoid requiring libc.
+        if (target.os.version_range.linux.android < 29 and link_mode == .dynamic) return true;
         return false;
     }
     if (target.abi.isOpenHarmony()) return true;
