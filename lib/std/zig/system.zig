@@ -442,7 +442,6 @@ pub fn resolveTargetQuery(io: Io, query: Target.Query) DetectError!Target {
         error.LockViolation,
         error.FileSystem,
 
-        error.UnableToOpenElfFile,
         error.UnhelpfulFile,
         error.InvalidElfFile,
         error.RelativeShebang,
